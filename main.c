@@ -6,34 +6,34 @@
 
 int main(int argc, char **argv)
 {
-    char *cmd;
+    char *command = NULL;
 
-    do
+    do    //Read Eval Print Loop
     {
-        print_prompt1();
+        print_prompt1();    // Print primary prompt
 
-        cmd = read_cmd();
+        command = read_cmd();     // Read command from stdin
 
-        if(!cmd)
+        if(!command)
         {
             exit(EXIT_SUCCESS);
         }
 
-        if(cmd[0] == '\0' || strcmp(cmd, "\n") == 0)
+        if(command[0] == '\0' || strcmp(command, "\n") == 0)
         {
-            free(cmd);
+            free(command);
             continue;
         }
 
-        if(strcmp(cmd, "exit\n") == 0)
+        if(strcmp(command, "exit\n") == 0)
         {
-            free(cmd);
+            free(command);
             break;
         }
 
-        printf("%s\n", cmd);
+        printf("%s\n", command);
 
-        free(cmd);
+        free(command);
 
     } while(1);
 
@@ -41,55 +41,55 @@ int main(int argc, char **argv)
 }
 char *read_cmd(void)
 {
-    char buf[1024];
-    char *ptr = NULL;
-    char ptrlen = 0;
+    char line_buffer[1024];  // temporary holding area for input lines
+    char *command_buffer = NULL;   // dynamically allocated command buffer
+    size_t command_length = 0;
 
-    while(fgets(buf, 1024, stdin))
+    while(fgets(line_buffer, sizeof(line_buffer), stdin))
     {
-        int buflen = strlen(buf);
+        size_t line_length = strlen(line_buffer);
 
-        if(!ptr)
+        if(!command_buffer)
         {
-            ptr = malloc(buflen+1);
+            command_buffer = malloc(line_length + 1);
         }
         else
         {
-            char *ptr2 = realloc(ptr, ptrlen+buflen+1);
+            char *resized_buffer = realloc(command_buffer, command_length + line_length + 1);
 
-            if(ptr2)
+            if(resized_buffer)
             {
-                ptr = ptr2;
+                command_buffer = resized_buffer;
             }
             else
             {
-                free(ptr);
-                ptr = NULL;
+                free(command_buffer);
+                command_buffer = NULL;
             }
         }
 
-        if(!ptr)
+        if(!command_buffer)
         {
             fprintf(stderr, "error: failed to alloc buffer: %s\n", strerror(errno));
             return NULL;
         }
 
-        strcpy(ptr+ptrlen, buf);
+        strcpy(command_buffer + command_length, line_buffer);
 
-        if(buf[buflen-1] == '\n')
+        if(line_length > 0 && line_buffer[line_length - 1] == '\n')
         {
-            if(buflen == 1 || buf[buflen-2] != '\\')
+            if(line_length == 1 || line_buffer[line_length - 2] != '\\')
             {
-                return ptr;
+                return command_buffer;
             }
 
-            ptr[ptrlen+buflen-2] = '\0';
-            buflen -= 2;
+            command_buffer[command_length + line_length - 2] = '\0';
+            line_length -= 2;
             print_prompt2();
         }
 
-        ptrlen += buflen;
+        command_length += line_length;
     }
 
-    return ptr;
+    return command_buffer;
 }
