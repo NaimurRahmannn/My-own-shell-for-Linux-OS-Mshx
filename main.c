@@ -3,7 +3,9 @@
 #include <errno.h>
 #include <string.h>
 #include "shell.h"
-
+#include "source.h"
+#include "parser.h"
+#include "executor.h"
 int main(int argc, char **argv)
 {
     char *command = NULL;
@@ -31,7 +33,11 @@ int main(int argc, char **argv)
             break;
         }
 
-        printf("%s\n", command);
+        struct source_s src;
+        src.buffer   = command;
+        src.buffer_size  = strlen(command);
+        src.current_pos   = INIT_SRC_POS;
+        parse_and_execute(&src);
 
         free(command);
 
@@ -92,4 +98,31 @@ char *read_cmd(void)
     }
 
     return command_buffer;
+}
+int parse_and_execute(struct source_s *src)
+{
+    skip_white_spaces(src);
+
+    struct token_s *tok = tokenize(src);
+
+    if(tok == &eof_token)
+    {
+        return 0;
+    }
+
+    while(tok && tok != &eof_token)
+    {
+        struct node_s *cmd = parse_simple_command(tok);
+
+        if(!cmd)
+        {
+            break;
+        }
+
+        do_simple_command(cmd);
+        free_node_tree(cmd);
+        tok = tokenize(src);
+    }
+
+    return 1;
 }
