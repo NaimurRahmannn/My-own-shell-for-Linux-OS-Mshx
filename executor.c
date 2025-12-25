@@ -161,11 +161,11 @@ int do_simple_command(struct node_s *node)
         fprintf(stderr, "error: failed to execute command: %s\n", strerror(errno));
         if(errno == ENOEXEC)
         {
-            exit(126);
+            exit(126);  // Command invoked cannot execute
         }
         else if(errno == ENOENT)
         {
-            exit(127);
+            exit(127);    // Command not found
         }
         else
         {
