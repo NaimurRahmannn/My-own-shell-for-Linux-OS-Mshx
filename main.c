@@ -9,53 +9,53 @@
 int main(int argc, char **argv)
 {
     char *command = NULL;
-
-    do    //Read Eval Print Loop
+    initsh();
+    do // Read Eval Print Loop
     {
-        print_prompt1();    // Print primary prompt
+        print_prompt1(); // Print primary prompt
 
-        command = read_cmd();     // Read command from stdin
+        command = read_cmd(); // Read command from stdin
 
-        if(!command)
+        if (!command)
         {
             exit(EXIT_SUCCESS);
         }
 
-        if(command[0] == '\0' || strcmp(command, "\n") == 0)
+        if (command[0] == '\0' || strcmp(command, "\n") == 0)
         {
             free(command);
             continue;
         }
 
-        if(strcmp(command, "exit\n") == 0)
+        if (strcmp(command, "exit\n") == 0)
         {
             free(command);
             break;
         }
 
         struct source_s src;
-        src.buffer   = command;
-        src.buffer_size  = strlen(command);
-        src.current_pos   = INIT_SRC_POS;
+        src.buffer = command;
+        src.buffer_size = strlen(command);
+        src.current_pos = INIT_SRC_POS;
         parse_and_execute(&src);
 
         free(command);
 
-    } while(1);
+    } while (1);
 
     exit(EXIT_SUCCESS);
 }
 char *read_cmd(void)
 {
-    char line_buffer[1024];  // temporary holding area for input lines
-    char *command_buffer = NULL;   // dynamically allocated command buffer
+    char line_buffer[1024];      // temporary holding area for input lines
+    char *command_buffer = NULL; // dynamically allocated command buffer
     size_t command_length = 0;
 
-    while(fgets(line_buffer, sizeof(line_buffer), stdin))
+    while (fgets(line_buffer, sizeof(line_buffer), stdin))
     {
         size_t line_length = strlen(line_buffer);
 
-        if(!command_buffer)
+        if (!command_buffer)
         {
             command_buffer = malloc(line_length + 1);
         }
@@ -63,7 +63,7 @@ char *read_cmd(void)
         {
             char *resized_buffer = realloc(command_buffer, command_length + line_length + 1);
 
-            if(resized_buffer)
+            if (resized_buffer)
             {
                 command_buffer = resized_buffer;
             }
@@ -74,7 +74,7 @@ char *read_cmd(void)
             }
         }
 
-        if(!command_buffer)
+        if (!command_buffer)
         {
             fprintf(stderr, "error: failed to alloc buffer: %s\n", strerror(errno));
             return NULL;
@@ -82,9 +82,9 @@ char *read_cmd(void)
 
         strcpy(command_buffer + command_length, line_buffer);
 
-        if(line_length > 0 && line_buffer[line_length - 1] == '\n')
+        if (line_length > 0 && line_buffer[line_length - 1] == '\n')
         {
-            if(line_length == 1 || line_buffer[line_length - 2] != '\\')
+            if (line_length == 1 || line_buffer[line_length - 2] != '\\')
             {
                 return command_buffer;
             }
@@ -105,16 +105,16 @@ int parse_and_execute(struct source_s *src)
 
     struct token_s *tok = tokenize(src);
 
-    if(tok == &eof_token)
+    if (tok == &eof_token)
     {
         return 0;
     }
 
-    while(tok && tok != &eof_token)
+    while (tok && tok != &eof_token)
     {
         struct node_s *cmd = parse_simple_command(tok);
 
-        if(!cmd)
+        if (!cmd)
         {
             break;
         }
