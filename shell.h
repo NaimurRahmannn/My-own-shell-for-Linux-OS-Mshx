@@ -14,7 +14,7 @@ int dump(int argc, char **argv);
 /* struct for builtin utilities */
 struct builtin_s
 {
-    char *name;    /* utility name */
+    char *name;                         /* utility name */
     int (*func)(int argc, char **argv); /* function to call to execute the utility */
 };
 
@@ -23,4 +23,14 @@ extern struct builtin_s builtins[];
 
 /* and their count */
 extern int builtins_count;
+struct word_s   //working with words in the shell
+{
+    char *data;
+    int len;
+    struct word_s *next;
+};
+struct word_s *make_word(char *str);
+
+void free_all_words(struct word_s *first);
+
 #endif

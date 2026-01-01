@@ -150,7 +150,7 @@ int do_simple_command(struct node_s *node)
     }
     argv[argc] = NULL;
     int i = 0;
-    for (; i < builtins_count; i++)
+    for (; i < builtins_count; i++)   //check if the typing command is in the builtin if yes then call the function
     {
         if (strcmp(argv[0], builtins[i].name) == 0)
         {
@@ -160,7 +160,7 @@ int do_simple_command(struct node_s *node)
         }
     }
     pid_t child_pid = 0;
-    if ((child_pid = fork()) == 0)
+    if ((child_pid = fork()) == 0)  
     {
         do_exec_cmd(argc, argv);
         fprintf(stderr, "error: failed to execute command: %s\n", strerror(errno));
