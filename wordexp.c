@@ -9,15 +9,28 @@
 #include <errno.h>
 #include <ctype.h>
 #include <sys/types.h>
-#include <glob.h>          // for glob_t, glob, globfree
+#include <glob.h>  // for glob_t, glob, globfree
 #include "shell.h"
 #include "symtab/symtab.h"
 #include "executor.h"
 
-#define INVALID_VAR     ((char *)-1)
+// Forward declarations
+char *quote_val(char *str, int add_quotes);
+char *tilde_expand(char *str);
+char *command_substitute(char *str);
+char *var_expand(char *str);
+char *arithm_expand(char *str);
+char *word_expand_to_str(char *word);
+struct word_s *field_split(char *str);
+struct word_s *pathnames_expand(struct word_s *words);
+char *strchr_any(const char *s, const char *accept);
+int match_suffix(char *pattern, char *str, int longest);
+int match_prefix(char *pattern, char *str, int longest);
+int has_glob_chars(char *str, size_t len);
+char **get_filename_matches(char *pattern, void *glob);
 
-// forward declaration for arithmetic expansion
-char *arithm_expand(char *expr);
+/* special value to represent an invalid variable */
+#define INVALID_VAR     ((char *)-1)
 
 
 /*
@@ -857,7 +870,7 @@ char *var_expand(char *orig_var_name)
         sub++;
     }
 
-    /* copy the varname to a buffer */
+    /* copy the var_name to a buffer */
     char var_name[len+1];
     strncpy(var_name, orig_var_name, len);
     var_name[len]   = '\0';

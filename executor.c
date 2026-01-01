@@ -9,6 +9,11 @@
 #include "node.h"
 #include "executor.h"
 
+// Forward declarations
+struct word_s *word_expand(char *str);
+void free_all_words(struct word_s *words);
+int check_buffer_bounds(int *argc, int *targc, char ***argv);
+
 char *search_path(char *file)
 {
     char *PATH = getenv("PATH");
@@ -80,7 +85,7 @@ char *search_path(char *file)
     return NULL;
 }
 
-int do_exec_cmd(int argc, char **argv)
+int do_exec_cmd(int argc __attribute__((unused)), char **argv)
 {
     if (strchr(argv[0], '/'))
     {
@@ -101,7 +106,7 @@ int do_exec_cmd(int argc, char **argv)
 
 static inline void free_argv(int argc, char **argv)
 {
-    if (!argc)
+    if (!argc || !argv)
     {
         return;
     }
@@ -110,6 +115,8 @@ static inline void free_argv(int argc, char **argv)
     {
         free(argv[argc]);
     }
+    
+    free(argv);
 }
 
 int do_simple_command(struct node_s *node)
@@ -165,6 +172,17 @@ int do_simple_command(struct node_s *node)
     {
         argv[argc] = NULL;
     }
+    
+    // Check if we have any arguments after expansion
+    if(argc == 0 || !argv || !argv[0])
+    {
+        if(argv)
+        {
+            free_argv(argc, argv);
+        }
+        return 0;
+    }
+    
     int i = 0;
     for (; i < builtins_count; i++)   //check if the typing command is in the builtin if yes then call the function
     {
@@ -196,6 +214,7 @@ int do_simple_command(struct node_s *node)
     else if (child_pid < 0)
     {
         fprintf(stderr, "error: failed to fork command: %s\n", strerror(errno));
+        free_argv(argc, argv);
         return 0;
     }
 
