@@ -125,30 +125,46 @@ int do_simple_command(struct node_s *node)
         return 0;
     }
 
-    int argc = 0;
-    long max_args = 255;
-    char *argv[max_args + 1]; /* keep 1 for the terminating NULL arg */
+     int argc = 0;
+    int targc = 0;
+    char **argv = NULL;
     char *str;
 
-    while (child)
+    while(child)
     {
         str = child->val.str;
-        argv[argc] = malloc(strlen(str) + 1);
-
-        if (!argv[argc])
+        struct word_s *w = word_expand(str);
+        
+        if(!w)
         {
-            free_argv(argc, argv);
-            return 0;
+            child = child->next_sibling;
+            continue;
         }
 
-        strcpy(argv[argc], str);
-        if (++argc >= max_args)
+        struct word_s *w2 = w;
+        while(w2)
         {
-            break;
+            if(check_buffer_bounds(&argc, &targc, &argv))
+            {
+                str = malloc(strlen(w2->data)+1);
+                if(str)
+                {
+                    strcpy(str, w2->data);
+                    argv[argc++] = str;
+                }
+            }
+            w2 = w2->next;
         }
+        
+        free_all_words(w);
+        
         child = child->next_sibling;
     }
-    argv[argc] = NULL;
+
+    if(check_buffer_bounds(&argc, &targc, &argv))
+    {
+        argv[argc] = NULL;
+    }
     int i = 0;
     for (; i < builtins_count; i++)   //check if the typing command is in the builtin if yes then call the function
     {
