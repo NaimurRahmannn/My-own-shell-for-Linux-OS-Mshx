@@ -10,6 +10,7 @@ int parse_and_execute(struct source_s *src);
 void initsh(void);
 /* shell builtin utilities */
 int dump(int argc, char **argv);
+int cd(int argc, char **argv);
 
 /* struct for builtin utilities */
 struct builtin_s
