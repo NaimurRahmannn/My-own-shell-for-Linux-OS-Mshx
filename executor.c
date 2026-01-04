@@ -9,6 +9,9 @@
 #include "node.h"
 #include "executor.h"
 
+/* extern declaration for exit status (defined in wordexp.c) */
+extern int exit_status;
+
 // Forward declarations
 struct word_s *word_expand(char *str);
 void free_all_words(struct word_s *words);
@@ -188,7 +191,7 @@ int do_simple_command(struct node_s *node)
     {
         if (strcmp(argv[0], builtins[i].name) == 0)
         {
-            builtins[i].func(argc, argv);
+            exit_status = builtins[i].func(argc, argv);
             free_argv(argc, argv);
             return 1;
         }
@@ -220,6 +223,17 @@ int do_simple_command(struct node_s *node)
 
     int status = 0;
     waitpid(child_pid, &status, 0);
+    
+    /* Set the exit status for $? */
+    if(WIFEXITED(status))
+    {
+        exit_status = WEXITSTATUS(status);
+    }
+    else if(WIFSIGNALED(status))
+    {
+        exit_status = 128 + WTERMSIG(status);
+    }
+    
     free_argv(argc, argv);
 
     return 1;

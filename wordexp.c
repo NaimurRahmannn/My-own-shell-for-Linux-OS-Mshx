@@ -14,6 +14,10 @@
 #include "symtab/symtab.h"
 #include "executor.h"
 
+/* Global variables for special parameters */
+int exit_status = 0;      /* $? - exit status of the last command */
+pid_t shell_pid = 0;      /* $$ - PID of the current shell */
+
 // Forward declarations
 char *quote_val(char *str, int add_quotes);
 char *tilde_expand(char *str);
@@ -630,6 +634,15 @@ struct word_s *word_expand(char *orig_word)
                         break;
                                                 
                     default:
+                        /* Handle special parameters $? and $$ */
+                        if(p[1] == '?' || p[1] == '$')
+                        {
+                            /* perform variable expansion for special parameters */
+                            substitute_word(&pstart, &p, 2, var_expand, 0);
+                            expanded = 1;
+                            break;
+                        }
+                        
                         /* var names must start with an alphabetic char or _ */
                         if(!isalpha(p[1]) && p[1] != '_')
                         {
@@ -817,17 +830,39 @@ char *var_expand(char *orig_var_name)
     /* skip the $ */
     orig_var_name++;
     size_t len = strlen(orig_var_name);
+    int had_braces = 0;
     if(*orig_var_name == '{')
     {
         /* remove the } */
         orig_var_name[len-1] = '\0';
         orig_var_name++;
+        had_braces = 1;
     }
 
     /* check we don't have an empty varname */
     if(!*orig_var_name)
     {
        return NULL;
+    }
+
+    /*
+     * Handle special parameters $? and $$
+     * These are single-character special parameters
+     */
+    if(orig_var_name[0] == '?' && (orig_var_name[1] == '\0' || (had_braces && orig_var_name[1] == '\0')))
+    {
+        /* $? - exit status of the last executed command */
+        char buf[16];
+        snprintf(buf, sizeof(buf), "%d", exit_status);
+        return strdup(buf);
+    }
+    
+    if(orig_var_name[0] == '$' && (orig_var_name[1] == '\0' || (had_braces && orig_var_name[1] == '\0')))
+    {
+        /* $$ - PID of the current shell */
+        char buf[32];
+        snprintf(buf, sizeof(buf), "%d", (int)shell_pid);
+        return strdup(buf);
     }
 
     int get_length = 0;

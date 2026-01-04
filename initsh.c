@@ -1,12 +1,20 @@
 #include <string.h>
+#include <unistd.h>
+#include <sys/types.h>
 #include "shell.h"
 #include "symtab/symtab.h"
 
 extern char **environ;
 
+/* extern declaration for shell_pid (defined in wordexp.c) */
+extern pid_t shell_pid;
+
 void initsh(void)
 {
     init_symtab();
+    
+    /* Initialize shell PID for $$ */
+    shell_pid = getpid();
 
     struct symtab_entry_s *entry;
     char **p2 = environ;
