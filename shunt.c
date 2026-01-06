@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
-#include "shell.h"
+#include "mshX.h"
 #include "symtab/symtab.h"
 
 #define MAXOPSTACK          64

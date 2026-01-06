@@ -10,7 +10,7 @@
 #include <ctype.h>
 #include <sys/types.h>
 #include <glob.h>  // for glob_t, glob, globfree
-#include "shell.h"
+#include "mshX.h"
 #include "symtab/symtab.h"
 #include "executor.h"
 

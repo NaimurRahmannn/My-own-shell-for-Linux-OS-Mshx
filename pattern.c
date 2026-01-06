@@ -12,7 +12,7 @@
 #include <locale.h>
 #include <glob.h>
 #include <sys/stat.h>
-#include "shell.h"
+#include "mshX.h"
 
 
 /*

@@ -1,4 +1,4 @@
-#include "../shell.h"
+#include "../mshX.h"
 #include "../symtab/symtab.h"
 
 int dump(int argc, char **argv)

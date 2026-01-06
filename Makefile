@@ -22,7 +22,7 @@ SRCS=main.c prompt.c node.c parser.c scanner.c source.c executor.c initsh.c  \
 OBJS=$(SRCS:%.c=$(BUILD_DIR)/%.o)
 
 # output file name
-TARGET=shell
+TARGET=mshX
 
 # default target (when we call make with no arguments)
 .PHONY: all

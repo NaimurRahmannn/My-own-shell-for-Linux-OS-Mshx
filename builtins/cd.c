@@ -3,7 +3,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <string.h>
-#include "../shell.h"
+#include "../mshX.h"
 #include "../symtab/symtab.h"
 
 /*

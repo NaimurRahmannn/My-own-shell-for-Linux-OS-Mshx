@@ -3,7 +3,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <pwd.h>
-#include "shell.h"
+#include "mshX.h"
 #include "symtab/symtab.h"
 
 

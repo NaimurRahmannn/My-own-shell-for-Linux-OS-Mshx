@@ -1,7 +1,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/types.h>
-#include "shell.h"
+#include "mshX.h"
 #include "symtab/symtab.h"
 
 extern char **environ;

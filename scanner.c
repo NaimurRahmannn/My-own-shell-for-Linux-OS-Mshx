@@ -3,7 +3,7 @@
 #include <string.h>
 #include <errno.h>
 #include <ctype.h>
-#include "shell.h"
+#include "mshX.h"
 #include "scanner.h"
 #include "source.h"
 

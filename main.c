@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
-#include "shell.h"
+#include "mshX.h"
 #include "source.h"
 #include "parser.h"
 #include "executor.h"

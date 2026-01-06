@@ -1,5 +1,5 @@
 #include <errno.h>
-#include "shell.h"
+#include "mshX.h"
 #include "source.h"
 
 void unget_char(struct source_s *src)  //undo the last read character

@@ -1,4 +1,4 @@
-#include "../shell.h"
+#include "../mshX.h"
 
 struct builtin_s builtins[] =
 {   

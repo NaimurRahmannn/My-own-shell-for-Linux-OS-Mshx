@@ -1,7 +1,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include "../shell.h"
+#include "../mshX.h"
 #include "../node.h"
 #include "../parser.h"
 #include "symtab.h"
