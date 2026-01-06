@@ -568,3 +568,208 @@ int do_pipeline(struct node_s **commands, int num_commands)
     
     return 1;
 }
+
+/*
+ * Execute a pipeline in the background.
+ * Similar to do_pipeline but doesn't wait for children.
+ */
+int do_pipeline_background(struct node_s **commands, int num_commands)
+{
+    if(num_commands == 0 || !commands)
+    {
+        return 0;
+    }
+    
+    /* Fork a subshell to handle the entire pipeline in background */
+    pid_t bg_pid = fork();
+    
+    if(bg_pid == 0)
+    {
+        /* Child: this becomes the background job leader */
+        /* Detach from terminal's process group */
+        setpgid(0, 0);
+        
+        if(num_commands == 1)
+        {
+            /* Single command - execute directly */
+            struct node_s *node = commands[0];
+            struct node_s *child = node->first_child;
+            
+            int argc = 0;
+            int targc = 0;
+            char **argv = NULL;
+            char *str;
+            
+            while(child)
+            {
+                str = child->val.str;
+                
+                if(strcmp(str, ">") == 0 || strcmp(str, ">>") == 0 || strcmp(str, "<") == 0)
+                {
+                    child = child->next_sibling;
+                    if(child) child = child->next_sibling;
+                    continue;
+                }
+                
+                struct word_s *w = word_expand(str);
+                
+                if(!w)
+                {
+                    child = child->next_sibling;
+                    continue;
+                }
+
+                struct word_s *w2 = w;
+                while(w2)
+                {
+                    if(check_buffer_bounds(&argc, &targc, &argv))
+                    {
+                        str = malloc(strlen(w2->data)+1);
+                        if(str)
+                        {
+                            strcpy(str, w2->data);
+                            argv[argc++] = str;
+                        }
+                    }
+                    w2 = w2->next;
+                }
+                
+                free_all_words(w);
+                child = child->next_sibling;
+            }
+            
+            if(argc > 0 && argv)
+            {
+                if(check_buffer_bounds(&argc, &targc, &argv))
+                {
+                    argv[argc] = NULL;
+                }
+                do_exec_cmd(argc, argv);
+            }
+            exit(EXIT_FAILURE);
+        }
+        
+        /* Multiple commands - set up pipeline */
+        int pipefds[2 * (num_commands - 1)];
+        pid_t pids[num_commands];
+        
+        for(int i = 0; i < num_commands - 1; i++)
+        {
+            if(pipe(pipefds + i * 2) < 0)
+            {
+                exit(EXIT_FAILURE);
+            }
+        }
+        
+        for(int i = 0; i < num_commands; i++)
+        {
+            pids[i] = fork();
+            
+            if(pids[i] == 0)
+            {
+                if(i > 0)
+                {
+                    dup2(pipefds[(i - 1) * 2], STDIN_FILENO);
+                }
+                
+                if(i < num_commands - 1)
+                {
+                    dup2(pipefds[i * 2 + 1], STDOUT_FILENO);
+                }
+                
+                for(int j = 0; j < 2 * (num_commands - 1); j++)
+                {
+                    close(pipefds[j]);
+                }
+                
+                struct node_s *node = commands[i];
+                struct node_s *child = node->first_child;
+                
+                int argc = 0;
+                int targc = 0;
+                char **argv = NULL;
+                char *str;
+                
+                while(child)
+                {
+                    str = child->val.str;
+                    
+                    if(strcmp(str, ">") == 0 || strcmp(str, ">>") == 0 || strcmp(str, "<") == 0)
+                    {
+                        child = child->next_sibling;
+                        if(child) child = child->next_sibling;
+                        continue;
+                    }
+                    
+                    struct word_s *w = word_expand(str);
+                    
+                    if(!w)
+                    {
+                        child = child->next_sibling;
+                        continue;
+                    }
+
+                    struct word_s *w2 = w;
+                    while(w2)
+                    {
+                        if(check_buffer_bounds(&argc, &targc, &argv))
+                        {
+                            str = malloc(strlen(w2->data)+1);
+                            if(str)
+                            {
+                                strcpy(str, w2->data);
+                                argv[argc++] = str;
+                            }
+                        }
+                        w2 = w2->next;
+                    }
+                    
+                    free_all_words(w);
+                    child = child->next_sibling;
+                }
+                
+                if(argc > 0 && argv)
+                {
+                    if(check_buffer_bounds(&argc, &targc, &argv))
+                    {
+                        argv[argc] = NULL;
+                    }
+                    do_exec_cmd(argc, argv);
+                }
+                exit(EXIT_FAILURE);
+            }
+            else if(pids[i] < 0)
+            {
+                exit(EXIT_FAILURE);
+            }
+        }
+        
+        for(int j = 0; j < 2 * (num_commands - 1); j++)
+        {
+            close(pipefds[j]);
+        }
+        
+        int status;
+        for(int i = 0; i < num_commands; i++)
+        {
+            waitpid(pids[i], &status, 0);
+        }
+        
+        if(WIFEXITED(status))
+        {
+            exit(WEXITSTATUS(status));
+        }
+        exit(EXIT_FAILURE);
+    }
+    else if(bg_pid < 0)
+    {
+        fprintf(stderr, "error: failed to fork background job: %s\n", strerror(errno));
+        return 0;
+    }
+    
+    /* Parent: print background job info and continue */
+    printf("[%d] %d\n", 1, bg_pid);
+    exit_status = 0;
+    
+    return 1;
+}

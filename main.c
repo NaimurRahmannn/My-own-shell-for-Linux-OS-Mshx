@@ -151,10 +151,24 @@ int parse_and_execute(struct source_s *src)
             tok = tokenize(src);
         }
         
+        /* Check if this is a background job */
+        int run_in_background = 0;
+        if(tok && tok != &eof_token && strcmp(tok->text, "&") == 0)
+        {
+            run_in_background = 1;
+        }
+        
         /* Execute the pipeline */
         if(num_cmds > 0)
         {
-            do_pipeline(pipeline, num_cmds);
+            if(run_in_background)
+            {
+                do_pipeline_background(pipeline, num_cmds);
+            }
+            else
+            {
+                do_pipeline(pipeline, num_cmds);
+            }
             
             /* Free all command nodes */
             for(int i = 0; i < num_cmds; i++)
@@ -238,6 +252,14 @@ int parse_and_execute(struct source_s *src)
         else if(strcmp(tok->text, ";") == 0)
         {
             /* Command separator: just continue to next command unconditionally */
+            free_token(tok);
+            skip_white_spaces(src);
+            tok = tokenize(src);
+            continue;
+        }
+        else if(strcmp(tok->text, "&") == 0)
+        {
+            /* Background operator: command already executed, just continue */
             free_token(tok);
             skip_white_spaces(src);
             tok = tokenize(src);

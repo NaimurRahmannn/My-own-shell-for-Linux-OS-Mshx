@@ -236,8 +236,18 @@ struct token_s *tokenize(struct source_s *src)
                 }
                 else
                 {
-                    /* single '&' - background operator (just add to buffer for now) */
-                    add_to_buf(nc);
+                    /* single '&' - background operator */
+                    if(tok_bufindex > 0)
+                    {
+                        /* return current token first */
+                        unget_char(src);
+                        endloop = 1;
+                    }
+                    else
+                    {
+                        add_to_buf('&');
+                        endloop = 1;
+                    }
                 }
                 break;
 
