@@ -7,6 +7,9 @@
 #include "parser.h"
 #include "executor.h"
 
+/* extern declaration for exit status */
+extern int exit_status;
+
 
 int main(int argc, char **argv)
 {
@@ -110,9 +113,97 @@ int parse_and_execute(struct source_s *src)
             break;
         }
 
-        do_simple_command(cmd);
+        /* Check if command has any children (actual command to run) */
+        if(cmd->first_child)
+        {
+            do_simple_command(cmd);
+        }
         free_node_tree(cmd);
+        
+        /* Skip whitespace and check for logical operators */
+        skip_white_spaces(src);
         tok = tokenize(src);
+        
+        if(tok == &eof_token)
+        {
+            break;
+        }
+        
+        /* Handle logical operators */
+        if(strcmp(tok->text, "&&") == 0)
+        {
+            free_token(tok);
+            /* AND operator: execute next command only if previous succeeded (exit_status == 0) */
+            if(exit_status != 0)
+            {
+                /* Skip remaining commands in this AND chain until we hit || or end */
+                skip_white_spaces(src);
+                tok = tokenize(src);
+                while(tok && tok != &eof_token)
+                {
+                    if(strcmp(tok->text, "||") == 0)
+                    {
+                        free_token(tok);
+                        break;
+                    }
+                    if(tok->text[0] == '\n')
+                    {
+                        free_token(tok);
+                        return 1;
+                    }
+                    free_token(tok);
+                    tok = tokenize(src);
+                }
+                if(tok == &eof_token)
+                {
+                    return 1;
+                }
+            }
+            skip_white_spaces(src);
+            tok = tokenize(src);
+            continue;
+        }
+        else if(strcmp(tok->text, "||") == 0)
+        {
+            free_token(tok);
+            /* OR operator: execute next command only if previous failed (exit_status != 0) */
+            if(exit_status == 0)
+            {
+                /* Skip remaining commands in this OR chain until we hit && or end */
+                skip_white_spaces(src);
+                tok = tokenize(src);
+                while(tok && tok != &eof_token)
+                {
+                    if(strcmp(tok->text, "&&") == 0)
+                    {
+                        free_token(tok);
+                        break;
+                    }
+                    if(tok->text[0] == '\n')
+                    {
+                        free_token(tok);
+                        return 1;
+                    }
+                    free_token(tok);
+                    tok = tokenize(src);
+                }
+                if(tok == &eof_token)
+                {
+                    return 1;
+                }
+            }
+            skip_white_spaces(src);
+            tok = tokenize(src);
+            continue;
+        }
+        else if(strcmp(tok->text, ";") == 0)
+        {
+            /* Command separator: just continue to next command unconditionally */
+            free_token(tok);
+            skip_white_spaces(src);
+            tok = tokenize(src);
+            continue;
+        }
     }
     return 1;
 }

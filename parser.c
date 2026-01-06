@@ -1,4 +1,5 @@
 #include <unistd.h>
+#include <string.h>
 #include "mshX.h"
 #include "parser.h"
 #include "scanner.h"
@@ -26,6 +27,24 @@ struct node_s *parse_simple_command(struct token_s *tok)
     {
         if(tok->text[0] == '\n')
         {
+            free_token(tok);
+            break;
+        }
+
+        /* Check for logical operators and command separator - stop parsing current command */
+        if(strcmp(tok->text, "&&") == 0 || strcmp(tok->text, "||") == 0)
+        {
+            /* Put the operator back for the caller to handle */
+            unget_char(src);
+            unget_char(src);
+            free_token(tok);
+            break;
+        }
+        
+        if(strcmp(tok->text, ";") == 0)
+        {
+            /* Put the semicolon back for the caller to handle */
+            unget_char(src);
             free_token(tok);
             break;
         }

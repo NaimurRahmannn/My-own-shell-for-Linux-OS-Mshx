@@ -215,6 +215,71 @@ struct token_s *tokenize(struct source_s *src)
                 }
                 endloop = 1;
                 break;
+
+            case '&':
+                /* check for && operator */
+                nc2 = peek_char(src);
+                if(nc2 == '&')
+                {
+                    /* if we have something in buffer, return it first */
+                    if(tok_bufindex > 0)
+                    {
+                        unget_char(src);
+                        endloop = 1;
+                        break;
+                    }
+                    /* consume the second '&' */
+                    next_char(src);
+                    add_to_buf('&');
+                    add_to_buf('&');
+                    endloop = 1;
+                }
+                else
+                {
+                    /* single '&' - background operator (just add to buffer for now) */
+                    add_to_buf(nc);
+                }
+                break;
+
+            case '|':
+                /* check for || operator */
+                nc2 = peek_char(src);
+                if(nc2 == '|')
+                {
+                    /* if we have something in buffer, return it first */
+                    if(tok_bufindex > 0)
+                    {
+                        unget_char(src);
+                        endloop = 1;
+                        break;
+                    }
+                    /* consume the second '|' */
+                    next_char(src);
+                    add_to_buf('|');
+                    add_to_buf('|');
+                    endloop = 1;
+                }
+                else
+                {
+                    /* single '|' - pipe operator (just add to buffer for now) */
+                    add_to_buf(nc);
+                }
+                break;
+
+            case ';':
+                /* command separator */
+                if(tok_bufindex > 0)
+                {
+                    /* return current token first */
+                    unget_char(src);
+                    endloop = 1;
+                }
+                else
+                {
+                    add_to_buf(';');
+                    endloop = 1;
+                }
+                break;
                 
             default:
                 add_to_buf(nc);
