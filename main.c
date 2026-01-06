@@ -106,23 +106,62 @@ int parse_and_execute(struct source_s *src)
 
     while(tok && tok != &eof_token)
     {
-        struct node_s *cmd = parse_simple_command(tok);
-
-        if(!cmd)
-        {
-            break;
-        }
-
-        /* Check if command has any children (actual command to run) */
-        if(cmd->first_child)
-        {
-            do_simple_command(cmd);
-        }
-        free_node_tree(cmd);
+        /* Collect commands for pipeline */
+        struct node_s *pipeline[64];  /* max 64 commands in a pipeline */
+        int num_cmds = 0;
         
-        /* Skip whitespace and check for logical operators */
+        /* Parse first command */
+        struct node_s *cmd = parse_simple_command(tok);
+        if(cmd && cmd->first_child)
+        {
+            pipeline[num_cmds++] = cmd;
+        }
+        else if(cmd)
+        {
+            free_node_tree(cmd);
+        }
+        
+        /* Check for pipes and collect all commands in pipeline */
         skip_white_spaces(src);
         tok = tokenize(src);
+        
+        while(tok && tok != &eof_token && strcmp(tok->text, "|") == 0)
+        {
+            free_token(tok);
+            skip_white_spaces(src);
+            tok = tokenize(src);
+            
+            if(tok == &eof_token)
+            {
+                fprintf(stderr, "error: expected command after pipe\n");
+                break;
+            }
+            
+            cmd = parse_simple_command(tok);
+            if(cmd && cmd->first_child && num_cmds < 64)
+            {
+                pipeline[num_cmds++] = cmd;
+            }
+            else if(cmd)
+            {
+                free_node_tree(cmd);
+            }
+            
+            skip_white_spaces(src);
+            tok = tokenize(src);
+        }
+        
+        /* Execute the pipeline */
+        if(num_cmds > 0)
+        {
+            do_pipeline(pipeline, num_cmds);
+            
+            /* Free all command nodes */
+            for(int i = 0; i < num_cmds; i++)
+            {
+                free_node_tree(pipeline[i]);
+            }
+        }
         
         if(tok == &eof_token)
         {

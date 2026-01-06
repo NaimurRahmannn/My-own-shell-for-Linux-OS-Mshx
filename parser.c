@@ -41,9 +41,9 @@ struct node_s *parse_simple_command(struct token_s *tok)
             break;
         }
         
-        if(strcmp(tok->text, ";") == 0)
+        if(strcmp(tok->text, ";") == 0 || strcmp(tok->text, "|") == 0)
         {
-            /* Put the semicolon back for the caller to handle */
+            /* Put the separator/pipe back for the caller to handle */
             unget_char(src);
             free_token(tok);
             break;

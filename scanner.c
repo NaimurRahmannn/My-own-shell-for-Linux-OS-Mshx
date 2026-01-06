@@ -261,8 +261,18 @@ struct token_s *tokenize(struct source_s *src)
                 }
                 else
                 {
-                    /* single '|' - pipe operator (just add to buffer for now) */
-                    add_to_buf(nc);
+                    /* single '|' - pipe operator */
+                    if(tok_bufindex > 0)
+                    {
+                        /* return current token first */
+                        unget_char(src);
+                        endloop = 1;
+                    }
+                    else
+                    {
+                        add_to_buf('|');
+                        endloop = 1;
+                    }
                 }
                 break;
 
@@ -279,6 +289,44 @@ struct token_s *tokenize(struct source_s *src)
                     add_to_buf(';');
                     endloop = 1;
                 }
+                break;
+
+            case '>':
+                /* check for >> (append) operator */
+                if(tok_bufindex > 0)
+                {
+                    /* return current token first */
+                    unget_char(src);
+                    endloop = 1;
+                    break;
+                }
+                nc2 = peek_char(src);
+                if(nc2 == '>')
+                {
+                    /* append redirection >> */
+                    next_char(src);
+                    add_to_buf('>');
+                    add_to_buf('>');
+                }
+                else
+                {
+                    /* output redirection > */
+                    add_to_buf('>');
+                }
+                endloop = 1;
+                break;
+
+            case '<':
+                /* input redirection */
+                if(tok_bufindex > 0)
+                {
+                    /* return current token first */
+                    unget_char(src);
+                    endloop = 1;
+                    break;
+                }
+                add_to_buf('<');
+                endloop = 1;
                 break;
                 
             default:
