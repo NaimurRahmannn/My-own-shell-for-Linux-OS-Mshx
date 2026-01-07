@@ -97,6 +97,37 @@ int parse_and_execute(struct source_s *src)
 {
     skip_white_spaces(src);
 
+    /* For dry-run mode: check if we have multiple commands (sequence) */
+    int has_sequence = 0;
+    
+    /* First pass for dry-run: check if there's a sequence operator */
+    if(current_exec_mode == EXEC_DRY)
+    {
+        /* Save position BEFORE tokenizing */
+        long saved_pos = src->current_pos;
+        
+        /* Count commands and check for sequence */
+        struct token_s *check_tok = tokenize(src);
+        while(check_tok && check_tok != &eof_token)
+        {
+            if(strcmp(check_tok->text, ";") == 0)
+            {
+                has_sequence = 1;
+            }
+            free_token(check_tok);
+            skip_white_spaces(src);
+            check_tok = tokenize(src);
+        }
+        
+        /* Reset position for actual parsing */
+        src->current_pos = saved_pos;
+        
+        if(has_sequence)
+        {
+            dry_print_sequence();
+        }
+    }
+
     struct token_s *tok = tokenize(src);
 
     if(tok == &eof_token)

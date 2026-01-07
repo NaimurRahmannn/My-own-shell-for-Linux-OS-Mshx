@@ -77,11 +77,11 @@ int match_prefix(char *pattern, char *str, int longest)
                 if(!longest)
                 {
                     *s = c;
-                    return s-str;
+                    return s-str; 
                 }
-                smatch = s;
+                smatch = s;  
             }
-            lmatch = s;
+            lmatch = s;   
         }
         *s = c;
         c = *(++s);

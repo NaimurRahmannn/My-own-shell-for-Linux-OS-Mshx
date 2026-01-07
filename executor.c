@@ -6,12 +6,16 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <fcntl.h>
+#include <glob.h>
 #include "mshX.h"
 #include "node.h"
 #include "executor.h"
 
 /* extern declaration for exit status (defined in wordexp.c) */
 extern int exit_status;
+
+/* Current execution mode - defaults to real execution */
+enum exec_mode current_exec_mode = EXEC_REAL;
 
 /* Redirection types */
 #define REDIRECT_INPUT    0   /* < */
@@ -30,6 +34,8 @@ struct redirect_s
 struct word_s *word_expand(char *str);
 void free_all_words(struct word_s *words);
 int check_buffer_bounds(int *argc, int *targc, char ***argv);
+int has_glob_chars(char *str, size_t len);
+char **get_filename_matches(char *pattern, glob_t *matches);
 
 /* Free redirection list */
 static void free_redirects(struct redirect_s *redirects)
@@ -44,6 +50,80 @@ static void free_redirects(struct redirect_s *redirects)
         free(redirects);
         redirects = next;
     }
+}
+
+/*
+ * Dry-run print functions
+ */
+
+/* Print EXEC line with full path */
+void dry_print_exec(int argc, char **argv)
+{
+    if(argc <= 0 || !argv || !argv[0])
+    {
+        return;
+    }
+    
+    char *path;
+    if(strchr(argv[0], '/'))
+    {
+        path = argv[0];
+        printf("EXEC: %s", path);
+    }
+    else
+    {
+        path = search_path(argv[0]);
+        if(path)
+        {
+            printf("EXEC: %s", path);
+            free(path);
+        }
+        else
+        {
+            printf("EXEC: %s", argv[0]);
+        }
+    }
+    
+    for(int i = 1; i < argc; i++)
+    {
+        printf(" %s", argv[i]);
+    }
+    printf("\n");
+}
+
+/* Print GLOB expansion */
+void dry_print_glob(const char *pattern, char **matches, int count)
+{
+    printf("GLOB: %s ->", pattern);
+    for(int i = 0; i < count; i++)
+    {
+        printf(" %s", matches[i]);
+    }
+    printf("\n");
+}
+
+/* Print REDIRECT */
+void dry_print_redirect(const char *direction, const char *filename)
+{
+    printf("REDIRECT: %s -> %s\n", direction, filename);
+}
+
+/* Print PIPE */
+void dry_print_pipe(const char *cmd1, const char *cmd2)
+{
+    printf("PIPE: %s -> %s\n", cmd1, cmd2);
+}
+
+/* Print SEQUENCE */
+void dry_print_sequence(void)
+{
+    printf("SEQUENCE:\n");
+}
+
+/* Print BACKGROUND */
+void dry_print_background(void)
+{
+    printf("BACKGROUND:\n");
 }
 
 /* Apply redirections - returns 0 on success, -1 on error */
@@ -222,6 +302,11 @@ int do_simple_command(struct node_s *node)
     int expect_filename = 0;
     int redirect_type = 0;
 
+    /* For dry-run mode: track glob patterns */
+    char *glob_patterns[64];
+    char *glob_expansions[64];
+    int glob_count = 0;
+
     while(child)
     {
         str = child->val.str;
@@ -283,13 +368,57 @@ int do_simple_command(struct node_s *node)
             continue;
         }
         
+        /* For dry-run mode: check for glob patterns before expansion */
+        int is_glob = 0;
+        char *pattern_copy = NULL;
+        if(current_exec_mode == EXEC_DRY && has_glob_chars(str, strlen(str)))
+        {
+            is_glob = 1;
+            pattern_copy = strdup(str);
+        }
+        
         struct word_s *w = word_expand(str);
         
         if(!w)
         {
+            if(pattern_copy) free(pattern_copy);
             child = child->next_sibling;
             continue;
         }
+
+        /* For dry-run mode: track glob expansion */
+        if(current_exec_mode == EXEC_DRY && is_glob && glob_count < 64)
+        {
+            /* Count expanded words */
+            int word_count = 0;
+            struct word_s *wc = w;
+            size_t total_len = 0;
+            while(wc)
+            {
+                word_count++;
+                total_len += strlen(wc->data) + 1;
+                wc = wc->next;
+            }
+            
+            /* Build expansion string */
+            char *expansion = malloc(total_len + 1);
+            if(expansion)
+            {
+                expansion[0] = '\0';
+                wc = w;
+                while(wc)
+                {
+                    if(expansion[0]) strcat(expansion, " ");
+                    strcat(expansion, wc->data);
+                    wc = wc->next;
+                }
+                glob_patterns[glob_count] = pattern_copy;
+                glob_expansions[glob_count] = expansion;
+                glob_count++;
+                pattern_copy = NULL; /* Don't free, it's stored */
+            }
+        }
+        if(pattern_copy) free(pattern_copy);
 
         struct word_s *w2 = w;
         while(w2)
@@ -324,9 +453,57 @@ int do_simple_command(struct node_s *node)
             free_argv(argc, argv);
         }
         free_redirects(redirects);
+        /* Free glob tracking data */
+        for(int g = 0; g < glob_count; g++)
+        {
+            free(glob_patterns[g]);
+            free(glob_expansions[g]);
+        }
         return 0;
     }
     
+    /* DRY-RUN MODE: Just print what would happen */
+    if(current_exec_mode == EXEC_DRY)
+    {
+        /* Print glob expansions first */
+        for(int g = 0; g < glob_count; g++)
+        {
+            printf("GLOB: %s -> %s\n", glob_patterns[g], glob_expansions[g]);
+            free(glob_patterns[g]);
+            free(glob_expansions[g]);
+        }
+        
+        /* Print EXEC line */
+        dry_print_exec(argc, argv);
+        
+        /* Print redirections */
+        struct redirect_s *r = redirects;
+        while(r)
+        {
+            const char *direction;
+            switch(r->type)
+            {
+                case REDIRECT_INPUT:
+                    direction = "stdin";
+                    break;
+                case REDIRECT_OUTPUT:
+                case REDIRECT_APPEND:
+                    direction = "stdout";
+                    break;
+                default:
+                    direction = "unknown";
+                    break;
+            }
+            dry_print_redirect(direction, r->filename);
+            r = r->next;
+        }
+        
+        free_argv(argc, argv);
+        free_redirects(redirects);
+        return 1;
+    }
+    
+    /* REAL EXECUTION MODE */
     int i = 0;
     for (; i < builtins_count; i++)   //check if the typing command is in the builtin if yes then call the function
     {
@@ -415,6 +592,32 @@ int do_simple_command(struct node_s *node)
 }
 
 /*
+ * Helper function to get the first command word from a node (for dry-run PIPE output)
+ */
+static char *get_first_command_word(struct node_s *node)
+{
+    if(!node || !node->first_child)
+    {
+        return NULL;
+    }
+    
+    struct node_s *child = node->first_child;
+    while(child)
+    {
+        char *str = child->val.str;
+        /* Skip redirection operators and their targets */
+        if(strcmp(str, ">") == 0 || strcmp(str, ">>") == 0 || strcmp(str, "<") == 0)
+        {
+            child = child->next_sibling;
+            if(child) child = child->next_sibling;
+            continue;
+        }
+        return str;
+    }
+    return NULL;
+}
+
+/*
  * Execute a pipeline of commands.
  * commands: array of node_s pointers (each is a simple command)
  * num_commands: number of commands in the pipeline
@@ -432,6 +635,30 @@ int do_pipeline(struct node_s **commands, int num_commands)
         return do_simple_command(commands[0]);
     }
     
+    /* DRY-RUN MODE: Print pipe information without actually piping */
+    if(current_exec_mode == EXEC_DRY)
+    {
+        /* Print PIPE information for each pair */
+        for(int i = 0; i < num_commands - 1; i++)
+        {
+            char *cmd1 = get_first_command_word(commands[i]);
+            char *cmd2 = get_first_command_word(commands[i + 1]);
+            if(cmd1 && cmd2)
+            {
+                dry_print_pipe(cmd1, cmd2);
+            }
+        }
+        
+        /* Execute each command in dry-run mode (which just prints EXEC) */
+        for(int i = 0; i < num_commands; i++)
+        {
+            do_simple_command(commands[i]);
+        }
+        
+        return 1;
+    }
+    
+    /* REAL EXECUTION MODE */
     int pipefds[2 * (num_commands - 1)];
     pid_t pids[num_commands];
     
@@ -580,6 +807,35 @@ int do_pipeline_background(struct node_s **commands, int num_commands)
         return 0;
     }
     
+    /* DRY-RUN MODE: Print background information without actually forking */
+    if(current_exec_mode == EXEC_DRY)
+    {
+        dry_print_background();
+        
+        /* Print pipe information if multiple commands */
+        if(num_commands > 1)
+        {
+            for(int i = 0; i < num_commands - 1; i++)
+            {
+                char *cmd1 = get_first_command_word(commands[i]);
+                char *cmd2 = get_first_command_word(commands[i + 1]);
+                if(cmd1 && cmd2)
+                {
+                    dry_print_pipe(cmd1, cmd2);
+                }
+            }
+        }
+        
+        /* Execute each command in dry-run mode (which just prints EXEC) */
+        for(int i = 0; i < num_commands; i++)
+        {
+            do_simple_command(commands[i]);
+        }
+        
+        return 1;
+    }
+    
+    /* REAL EXECUTION MODE */
     /* Fork a subshell to handle the entire pipeline in background */
     pid_t bg_pid = fork();
     
