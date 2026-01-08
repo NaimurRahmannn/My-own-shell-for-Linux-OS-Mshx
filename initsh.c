@@ -6,6 +6,7 @@
 #include <signal.h>
 #include "mshX.h"
 #include "symtab/symtab.h"
+#include "builtins/history.h"
 
 extern char **environ;
 
@@ -51,6 +52,9 @@ void setup_signals(void)
 void initsh(void)
 {
     init_symtab();
+    
+    /* Initialize history system */
+    history_init();
     
     /* Setup signal handlers - shell ignores SIGINT and SIGTSTP */
     setup_signals();

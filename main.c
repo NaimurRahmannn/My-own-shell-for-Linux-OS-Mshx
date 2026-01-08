@@ -7,6 +7,7 @@
 #include "parser.h"
 #include "executor.h"
 #include "builtins/timeline.h"
+#include "builtins/history.h"
 
 /* extern declaration for exit status */
 extern int exit_status;
@@ -79,7 +80,24 @@ int main(int argc, char **argv)
             break;
         }
         
-        /* Check for --timeline flag */
+        /* Expand history references (!! and !n) */
+        char *expanded = history_expand(cmd);
+        if(expanded)
+        {
+            free(cmd);
+            cmd = expanded;
+            /* If expansion resulted in empty string, skip execution */
+            if(cmd[0] == '\0')
+            {
+                free(cmd);
+                continue;
+            }
+        }
+        
+        /* Add command to history (before processing) */
+        history_add(cmd);
+        
+        /* Check for timeline flag */
         int timeline_requested = 0;
         cmd = check_timeline_flag(cmd, &timeline_requested);
         

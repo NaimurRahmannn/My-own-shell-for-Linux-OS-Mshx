@@ -12,6 +12,7 @@ void initsh(void);
 int dump(int argc, char **argv);
 int cd(int argc, char **argv);
 int dry(int argc, char **argv);
+int history_builtin(int argc, char **argv);
 
 /* struct for builtin utilities */
 struct builtin_s
