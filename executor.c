@@ -11,6 +11,7 @@
 #include "mshX.h"
 #include "node.h"
 #include "executor.h"
+#include "timeline.h"
 
 /* extern declaration for exit status (defined in wordexp.c) */
 extern int exit_status;
@@ -549,6 +550,9 @@ int do_simple_command(struct node_s *node)
             return 1;
         }
     }
+    /* Initialize timeline for this command */
+    timeline_init();
+    
     pid_t child_pid = 0;
     if ((child_pid = fork()) == 0)  
     {
@@ -560,6 +564,8 @@ int do_simple_command(struct node_s *node)
         {
             exit(EXIT_FAILURE);
         }
+        
+        /* Note: execve event is recorded by parent after fork returns */
         
         do_exec_cmd(argc, argv);
         fprintf(stderr, "error: failed to execute command: %s\n", strerror(errno));
@@ -583,26 +589,49 @@ int do_simple_command(struct node_s *node)
         free_redirects(redirects);
         return 0;
     }
+    
+    /* Record fork and execve events in timeline */
+    timeline_record_fork(child_pid);
+    
+    /* Record redirections in timeline with the child's PID */
+    if(timeline_is_enabled() && redirects)
+    {
+        struct redirect_s *r = redirects;
+        while(r)
+        {
+            timeline_record_redirect(child_pid, r->filename, r->type);
+            r = r->next;
+        }
+    }
+    
+    timeline_record_execve(child_pid);
 
     int status = 0;
     /* Use WUNTRACED to detect stopped processes (Ctrl+Z) */
     waitpid(child_pid, &status, WUNTRACED);
     
-    /* Set the exit status for $? */
+    /* Set the exit status for $? and record timeline events */
     if(WIFEXITED(status))
     {
         exit_status = WEXITSTATUS(status);
+        timeline_record_exit(child_pid, WEXITSTATUS(status));
     }
     else if(WIFSIGNALED(status))
     {
         exit_status = 128 + WTERMSIG(status);
+        timeline_record_signaled(child_pid, WTERMSIG(status));
     }
     else if(WIFSTOPPED(status))
     {
         /* Process was stopped (Ctrl+Z) */
         exit_status = 128 + WSTOPSIG(status);
+        timeline_record_stopped(child_pid, WSTOPSIG(status));
         fprintf(stderr, "\n[%d]+ Stopped\n", child_pid);
     }
+    
+    /* Print the execution timeline */
+    timeline_print();
+    timeline_reset();
     
     free_argv(argc, argv);
     free_redirects(redirects);
@@ -678,6 +707,10 @@ int do_pipeline(struct node_s **commands, int num_commands)
     }
     
     /* REAL EXECUTION MODE */
+    
+    /* Initialize timeline for pipeline */
+    timeline_init();
+    
     int pipefds[2 * (num_commands - 1)];
     pid_t pids[num_commands];
     
@@ -721,7 +754,7 @@ int do_pipeline(struct node_s **commands, int num_commands)
                 close(pipefds[j]);
             }
             
-            /* Execute the command - need to build argv from node */
+            /* Execute the command - need to build argv from node and handle redirections */
             struct node_s *node = commands[i];
             struct node_s *child = node->first_child;
             
@@ -730,15 +763,48 @@ int do_pipeline(struct node_s **commands, int num_commands)
             char **argv = NULL;
             char *str;
             
+            /* Collect redirections for this pipeline command */
+            struct redirect_s *cmd_redirects = NULL;
+            struct redirect_s *last_redir = NULL;
+            
             while(child)
             {
                 str = child->val.str;
                 
-                /* Skip redirection operators and their targets for pipe commands */
+                /* Check for redirection operators */
                 if(strcmp(str, ">") == 0 || strcmp(str, ">>") == 0 || strcmp(str, "<") == 0)
                 {
+                    int redir_type;
+                    if(strcmp(str, "<") == 0)
+                        redir_type = REDIRECT_INPUT;
+                    else if(strcmp(str, ">") == 0)
+                        redir_type = REDIRECT_OUTPUT;
+                    else
+                        redir_type = REDIRECT_APPEND;
+                    
                     child = child->next_sibling;
-                    if(child) child = child->next_sibling; /* skip filename too */
+                    if(child)
+                    {
+                        /* Get the filename */
+                        struct word_s *fw = word_expand(child->val.str);
+                        if(fw && fw->data)
+                        {
+                            struct redirect_s *redir = malloc(sizeof(struct redirect_s));
+                            if(redir)
+                            {
+                                redir->type = redir_type;
+                                redir->filename = strdup(fw->data);
+                                redir->next = NULL;
+                                if(last_redir)
+                                    last_redir->next = redir;
+                                else
+                                    cmd_redirects = redir;
+                                last_redir = redir;
+                            }
+                            free_all_words(fw);
+                        }
+                        child = child->next_sibling;
+                    }
                     continue;
                 }
                 
@@ -775,6 +841,13 @@ int do_pipeline(struct node_s **commands, int num_commands)
                 {
                     argv[argc] = NULL;
                 }
+                
+                /* Apply redirections before exec */
+                if(cmd_redirects && apply_redirects(cmd_redirects) < 0)
+                {
+                    exit(EXIT_FAILURE);
+                }
+                
                 do_exec_cmd(argc, argv);
                 fprintf(stderr, "error: failed to execute command: %s\n", strerror(errno));
             }
@@ -790,6 +863,18 @@ int do_pipeline(struct node_s **commands, int num_commands)
             }
             return 0;
         }
+        
+        /* Record timeline events in parent after fork */
+        timeline_record_fork(pids[i]);
+        
+        /* Record pipe event (connection between this command and previous) */
+        if(i > 0)
+        {
+            timeline_record_pipe(pids[i-1], pids[i]);
+        }
+        
+        /* Record execve event */
+        timeline_record_execve(pids[i]);
     }
     
     /* Parent: close all pipe fds */
@@ -798,12 +883,30 @@ int do_pipeline(struct node_s **commands, int num_commands)
         close(pipefds[j]);
     }
     
-    /* Wait for all children */
+    /* Wait for all children and record their exit events */
     int status;
+    int statuses[num_commands];
     for(int i = 0; i < num_commands; i++)
     {
-        waitpid(pids[i], &status, WUNTRACED);
+        waitpid(pids[i], &statuses[i], WUNTRACED);
+        
+        /* Record timeline events for each process */
+        if(WIFEXITED(statuses[i]))
+        {
+            timeline_record_exit(pids[i], WEXITSTATUS(statuses[i]));
+        }
+        else if(WIFSIGNALED(statuses[i]))
+        {
+            timeline_record_signaled(pids[i], WTERMSIG(statuses[i]));
+        }
+        else if(WIFSTOPPED(statuses[i]))
+        {
+            timeline_record_stopped(pids[i], WSTOPSIG(statuses[i]));
+        }
     }
+    
+    /* Use last command's status */
+    status = statuses[num_commands - 1];
     
     /* Set exit status from last command in pipeline */
     if(WIFEXITED(status))
@@ -820,6 +923,10 @@ int do_pipeline(struct node_s **commands, int num_commands)
         exit_status = 128 + WSTOPSIG(status);
         fprintf(stderr, "\n[Stopped]\n");
     }
+    
+    /* Print the execution timeline */
+    timeline_print();
+    timeline_reset();
     
     return 1;
 }
@@ -864,6 +971,10 @@ int do_pipeline_background(struct node_s **commands, int num_commands)
     }
     
     /* REAL EXECUTION MODE */
+    
+    /* Initialize timeline for background job */
+    timeline_init();
+    
     /* Fork a subshell to handle the entire pipeline in background */
     pid_t bg_pid = fork();
     
@@ -887,14 +998,47 @@ int do_pipeline_background(struct node_s **commands, int num_commands)
             char **argv = NULL;
             char *str;
             
+            /* Collect redirections */
+            struct redirect_s *cmd_redirects = NULL;
+            struct redirect_s *last_redir = NULL;
+            
             while(child)
             {
                 str = child->val.str;
                 
+                /* Check for redirection operators */
                 if(strcmp(str, ">") == 0 || strcmp(str, ">>") == 0 || strcmp(str, "<") == 0)
                 {
+                    int redir_type;
+                    if(strcmp(str, "<") == 0)
+                        redir_type = REDIRECT_INPUT;
+                    else if(strcmp(str, ">") == 0)
+                        redir_type = REDIRECT_OUTPUT;
+                    else
+                        redir_type = REDIRECT_APPEND;
+                    
                     child = child->next_sibling;
-                    if(child) child = child->next_sibling;
+                    if(child)
+                    {
+                        struct word_s *fw = word_expand(child->val.str);
+                        if(fw && fw->data)
+                        {
+                            struct redirect_s *redir = malloc(sizeof(struct redirect_s));
+                            if(redir)
+                            {
+                                redir->type = redir_type;
+                                redir->filename = strdup(fw->data);
+                                redir->next = NULL;
+                                if(last_redir)
+                                    last_redir->next = redir;
+                                else
+                                    cmd_redirects = redir;
+                                last_redir = redir;
+                            }
+                            free_all_words(fw);
+                        }
+                        child = child->next_sibling;
+                    }
                     continue;
                 }
                 
@@ -931,6 +1075,13 @@ int do_pipeline_background(struct node_s **commands, int num_commands)
                 {
                     argv[argc] = NULL;
                 }
+                
+                /* Apply redirections before exec */
+                if(cmd_redirects && apply_redirects(cmd_redirects) < 0)
+                {
+                    exit(EXIT_FAILURE);
+                }
+                
                 do_exec_cmd(argc, argv);
             }
             exit(EXIT_FAILURE);
@@ -977,14 +1128,47 @@ int do_pipeline_background(struct node_s **commands, int num_commands)
                 char **argv = NULL;
                 char *str;
                 
+                /* Collect redirections */
+                struct redirect_s *cmd_redirects = NULL;
+                struct redirect_s *last_redir = NULL;
+                
                 while(child)
                 {
                     str = child->val.str;
                     
+                    /* Check for redirection operators */
                     if(strcmp(str, ">") == 0 || strcmp(str, ">>") == 0 || strcmp(str, "<") == 0)
                     {
+                        int redir_type;
+                        if(strcmp(str, "<") == 0)
+                            redir_type = REDIRECT_INPUT;
+                        else if(strcmp(str, ">") == 0)
+                            redir_type = REDIRECT_OUTPUT;
+                        else
+                            redir_type = REDIRECT_APPEND;
+                        
                         child = child->next_sibling;
-                        if(child) child = child->next_sibling;
+                        if(child)
+                        {
+                            struct word_s *fw = word_expand(child->val.str);
+                            if(fw && fw->data)
+                            {
+                                struct redirect_s *redir = malloc(sizeof(struct redirect_s));
+                                if(redir)
+                                {
+                                    redir->type = redir_type;
+                                    redir->filename = strdup(fw->data);
+                                    redir->next = NULL;
+                                    if(last_redir)
+                                        last_redir->next = redir;
+                                    else
+                                        cmd_redirects = redir;
+                                    last_redir = redir;
+                                }
+                                free_all_words(fw);
+                            }
+                            child = child->next_sibling;
+                        }
                         continue;
                     }
                     
@@ -1021,6 +1205,13 @@ int do_pipeline_background(struct node_s **commands, int num_commands)
                     {
                         argv[argc] = NULL;
                     }
+                    
+                    /* Apply redirections before exec */
+                    if(cmd_redirects && apply_redirects(cmd_redirects) < 0)
+                    {
+                        exit(EXIT_FAILURE);
+                    }
+                    
                     do_exec_cmd(argc, argv);
                 }
                 exit(EXIT_FAILURE);
@@ -1054,9 +1245,17 @@ int do_pipeline_background(struct node_s **commands, int num_commands)
         return 0;
     }
     
+    /* Record fork event for background job */
+    timeline_record_fork(bg_pid);
+    timeline_record_execve(bg_pid);
+    
     /* Parent: print background job info and continue */
     printf("[%d] %d\n", 1, bg_pid);
     exit_status = 0;
+    
+    /* Print timeline for background job launch (it won't show exit since we don't wait) */
+    timeline_print();
+    timeline_reset();
     
     return 1;
 }
