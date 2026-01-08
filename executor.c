@@ -7,12 +7,21 @@
 #include <sys/wait.h>
 #include <fcntl.h>
 #include <glob.h>
+#include <signal.h>
 #include "mshX.h"
 #include "node.h"
 #include "executor.h"
 
 /* extern declaration for exit status (defined in wordexp.c) */
 extern int exit_status;
+
+/* Reset signals to default for child processes */
+static void reset_signals_for_child(void)
+{
+    signal(SIGINT, SIG_DFL);
+    signal(SIGTSTP, SIG_DFL);
+    signal(SIGTTOU, SIG_DFL);
+}
 
 /* Current execution mode - defaults to real execution */
 enum exec_mode current_exec_mode = EXEC_REAL;
@@ -543,6 +552,9 @@ int do_simple_command(struct node_s *node)
     pid_t child_pid = 0;
     if ((child_pid = fork()) == 0)  
     {
+        /* Reset signals to default in child process so it can receive SIGINT/SIGTSTP */
+        reset_signals_for_child();
+        
         /* Apply redirections in child process */
         if(redirects && apply_redirects(redirects) < 0)
         {
@@ -573,7 +585,8 @@ int do_simple_command(struct node_s *node)
     }
 
     int status = 0;
-    waitpid(child_pid, &status, 0);
+    /* Use WUNTRACED to detect stopped processes (Ctrl+Z) */
+    waitpid(child_pid, &status, WUNTRACED);
     
     /* Set the exit status for $? */
     if(WIFEXITED(status))
@@ -583,6 +596,12 @@ int do_simple_command(struct node_s *node)
     else if(WIFSIGNALED(status))
     {
         exit_status = 128 + WTERMSIG(status);
+    }
+    else if(WIFSTOPPED(status))
+    {
+        /* Process was stopped (Ctrl+Z) */
+        exit_status = 128 + WSTOPSIG(status);
+        fprintf(stderr, "\n[%d]+ Stopped\n", child_pid);
     }
     
     free_argv(argc, argv);
@@ -680,6 +699,9 @@ int do_pipeline(struct node_s **commands, int num_commands)
         if(pids[i] == 0)
         {
             /* Child process */
+            
+            /* Reset signals to default so child can receive SIGINT/SIGTSTP */
+            reset_signals_for_child();
             
             /* Set up input from previous pipe (if not first command) */
             if(i > 0)
@@ -780,7 +802,7 @@ int do_pipeline(struct node_s **commands, int num_commands)
     int status;
     for(int i = 0; i < num_commands; i++)
     {
-        waitpid(pids[i], &status, 0);
+        waitpid(pids[i], &status, WUNTRACED);
     }
     
     /* Set exit status from last command in pipeline */
@@ -791,6 +813,12 @@ int do_pipeline(struct node_s **commands, int num_commands)
     else if(WIFSIGNALED(status))
     {
         exit_status = 128 + WTERMSIG(status);
+    }
+    else if(WIFSTOPPED(status))
+    {
+        /* Pipeline was stopped (Ctrl+Z) */
+        exit_status = 128 + WSTOPSIG(status);
+        fprintf(stderr, "\n[Stopped]\n");
     }
     
     return 1;
@@ -842,6 +870,9 @@ int do_pipeline_background(struct node_s **commands, int num_commands)
     if(bg_pid == 0)
     {
         /* Child: this becomes the background job leader */
+        /* Reset signals to default for background processes */
+        reset_signals_for_child();
+        
         /* Detach from terminal's process group */
         setpgid(0, 0);
         

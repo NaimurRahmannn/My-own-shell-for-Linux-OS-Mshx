@@ -23,7 +23,15 @@ int main(int argc, char **argv)
         cmd = read_cmd();
         if(!cmd)
         {
-            exit(EXIT_SUCCESS);
+            /* Check if this was EOF or an error */
+            if(feof(stdin))
+            {
+                printf("\n");  /* Print newline before exit on Ctrl+D */
+                exit(EXIT_SUCCESS);
+            }
+            /* Clear any error state and continue (e.g., after signal) */
+            clearerr(stdin);
+            continue;
         }
         if(cmd[0] == '\0' || strcmp(cmd, "\n") == 0)
         {
