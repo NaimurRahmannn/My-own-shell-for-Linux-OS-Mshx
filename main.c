@@ -6,9 +6,44 @@
 #include "source.h"
 #include "parser.h"
 #include "executor.h"
+#include "timeline.h"
 
 /* extern declaration for exit status */
 extern int exit_status;
+
+/* Check if command starts with timeline and strip it */
+static char *check_timeline_flag(char *cmd, int *timeline_requested)
+{
+    *timeline_requested = 0;
+    
+    /* Skip leading whitespace */
+    char *p = cmd;
+    while(*p == ' ' || *p == '\t')
+        p++;
+    
+    /* Check for timeline flag */
+    if(strncmp(p, "timeline", 8) == 0 && 
+       (p[8] == ' ' || p[8] == '\t'))
+    {
+        *timeline_requested = 1;
+        p += 8;
+        
+        /* Skip whitespace after timeline */
+        while(*p == ' ' || *p == '\t')
+            p++;
+        
+        /* Create new command string without timeline */
+        char *new_cmd = malloc(strlen(p) + 1);
+        if(new_cmd)
+        {
+            strcpy(new_cmd, p);
+            free(cmd);
+            return new_cmd;
+        }
+    }
+    
+    return cmd;
+}
 
 
 int main(int argc, char **argv)
@@ -43,11 +78,29 @@ int main(int argc, char **argv)
             free(cmd);
             break;
         }
+        
+        /* Check for --timeline flag */
+        int timeline_requested = 0;
+        cmd = check_timeline_flag(cmd, &timeline_requested);
+        
+        /* Enable timeline if requested */
+        if(timeline_requested)
+        {
+            timeline_enable(1);
+        }
+        
 	struct source_s src;
         src.buffer   = cmd;
         src.buffer_size  = strlen(cmd);
         src.current_pos   = INIT_SRC_POS;
         parse_and_execute(&src);
+        
+        /* Disable timeline after execution */
+        if(timeline_requested)
+        {
+            timeline_enable(0);
+        }
+        
         free(cmd);
     } while(1);
     exit(EXIT_SUCCESS);

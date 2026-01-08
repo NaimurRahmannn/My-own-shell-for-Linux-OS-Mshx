@@ -9,7 +9,7 @@
 /* Global timeline instance */
 timeline_t g_timeline = {
     .event_count = 0,
-    .enabled = 1  /* Timeline enabled by default */
+    .enabled = 0  /* Timeline disabled by default, use --timeline to enable */
 };
 
 /* Get current time in milliseconds relative to command start */
