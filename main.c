@@ -6,7 +6,7 @@
 #include "source.h"
 #include "parser.h"
 #include "executor.h"
-#include "timeline.h"
+#include "builtins/timeline.h"
 
 /* extern declaration for exit status */
 extern int exit_status;

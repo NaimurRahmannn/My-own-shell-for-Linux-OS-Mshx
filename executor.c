@@ -11,7 +11,7 @@
 #include "mshX.h"
 #include "node.h"
 #include "executor.h"
-#include "timeline.h"
+#include "builtins/timeline.h"
 
 /* extern declaration for exit status (defined in wordexp.c) */
 extern int exit_status;
